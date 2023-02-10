@@ -1,0 +1,330 @@
+2/1/2023
+Catch up on what I've been doing.
+Working on sdGetMGIRefs.py, script to create reference datasets.
+
+Figuring out SQL for getting:
+1) manually selected papers
+    - some sticky issues: papers that have only been selected by pm2gene or
+        the GOA loads
+2) manually rejected (discarded) papers
+    - (NOT set to discard by relevance_classifier)
+    - papers marked as discard by by littriage_discard:
+        these are sort of manually rejected. So I'm taking these (if they
+        fit in the final date range I decide), but I'd like to have the
+        created_by field so I determine if a paper was loaded this way.
+
+        Bulk of littriage_discard papers were loaded 10/24/2018 - 11/14/2018,
+        but 2 more were loaded 8/31/2020, and 16 more 4/8/2021 - 4/21/2021
+
+3) exactly what fields do I want
+4) what dates to use, how many papers to get
+5) how many G of data do I want? How much can I store
+6) want to get extracted text from the current pdf2text version that we are
+    using on production. So need to rerun pdf2text on older papers. 
+    Need to get exact date.
+7) Fussing with SQL performance.
+
+Initial counts
+Tue Jan 31 20:12:00 2023
+Hitting database bhmgidevdb01.jax.org prod as mgd_public
+  17666 Omitted refs
+        GOA loaded or only pm2gene indexed or MGI:Mice_in_references_only.
+        Extracted text null or <500 chars.
+        Created >= 01/01/2015
+ 105977 Papers manually selected for curation
+        Created >= 01/01/2015
+ 129372 Papers manually NOT selected for curation
+        Created >= 01/01/2015
+
+In the selected set, found MGI:6511357, key: 421991, has been duplicated.
+My guess is that it is duplicated in bib_status_view for some reason.
+
+Counts of papers selected and who created them:
+Pulled by: cut -d '|' -f 6 selected.txt| sort | uniq -c
+    392 acv
+     10 brs
+   1693 cms
+      1 created_by
+  31848 csmith
+    833 dab
+      2 djr
+    951 dmitrys
+   2087 dmk
+   1316 dph
+    444 embargo_PDF_download
+   4206 hjd
+    656 honda
+   4252 jeo
+   3112 jfinger
+      1 jrecla
+   1177 jx
+   1426 krc
+    867 littriage_discard
+    535 littriage_goa
+    268 littriage_noctua
+   3363 ln
+      6 mberry
+      1 mgd_dbo
+   1264 mmh
+   1235 mnk
+   1338 monikat
+  29113 neb
+   8827 pdfdownload
+   1238 smb
+    896 terryh
+   2621 wilmil
+
+Counts of papers rejected and who created them:
+Pulled by: cut -d '|' -f 6 rejected.txt| sort | uniq -c
+     19 acv
+      2 brs
+    756 cms
+      1 created_by
+  10819 csmith
+   1670 dab
+    451 dmitrys
+   5193 dmk
+   3714 dph
+    229 embargo_PDF_download
+   6745 hjd
+   1671 honda
+   4975 jeo
+   4245 jfinger
+   2558 jx
+   2901 krc
+  48390 littriage_discard
+      2 littriage_noctua
+   7117 ln
+   1774 mmh
+    283 mnk
+   1834 monikat
+   6177 neb
+  14935 pdfdownload
+    760 smb
+    827 terryh
+   1325 wilmil
+
+Counts of bulk loaded papers that have been marked for discard:
+Pulled by: cut -d '|' -f 6,12 rejected.txt| sort | uniq -c
+              loaded by  |set to discard by
+     16 littriage_discard|csmith
+      1 littriage_discard|jfinger
+  48361 littriage_discard|mgd_dbo ** by the data migration for discard schema
+     11 littriage_discard|neb
+      1 littriage_discard|smb
+      1 littriage_noctua|cms
+      1 littriage_noctua|csmith
+
+   1045 pdfdownload|cms
+   1726 pdfdownload|csmith
+      6 pdfdownload|dab
+      3 pdfdownload|dmk
+    886 pdfdownload|ijm
+     13 pdfdownload|jeo
+    591 pdfdownload|jfinger
+    919 pdfdownload|jx
+      3 pdfdownload|krc
+   8856 pdfdownload|mgd_dbo      **
+      2 pdfdownload|mnk
+      1 pdfdownload|monikat
+     79 pdfdownload|neb
+      2 pdfdownload|smb
+    803 pdfdownload|terryh
+
+     19 embargo_PDF_download|cms
+     47 embargo_PDF_download|csmith
+     19 embargo_PDF_download|ijm
+     20 embargo_PDF_download|jfinger
+     21 embargo_PDF_download|jx
+     76 embargo_PDF_download|mgd_dbo      **
+      1 embargo_PDF_download|monikat
+      4 embargo_PDF_download|neb
+     22 embargo_PDF_download|terryh
+
+Decided:
+- Have found that some papers are missing PMIDs or DOIDs, so I have switched to
+    left outer joins when pulling in those IDs. (although I could also just not
+    bother taking such papers).
+
+Next Goal:
+- get count of papers in the db with the latest pdf2text. Get those sets and
+    see how many papers, how much space per paper. Then we can estimate.
+
+LATEST PDFTOTEXT:
+    Initially installed for 11/1/2019.
+    See http://wts.informatics.jax.org/wts_projects/archive/13100/TR13190.html
+
+    Got replaced on 5/6/2020 with older version, but it appears we cleaned
+    up and reextracted text for papers since 5/6/2020.
+    See http://wts.informatics.jax.org/wts_projects/archive/13300/TR13312.html
+
+    BOTTOM LINE. Papers created after 11/1/2019 should all have the latest
+    pdftotext version.
+
+    Wed Feb  1 11:13:31 2023
+    Hitting database bhmgidevdb01.jax.org prod as mgd_public
+      13339 Omitted refs
+            GOA loaded or only pm2gene indexed or MGI:Mice_in_references_only.
+            Extracted text null or <500 chars.
+            Created >= 11/01/2019
+      46741 Papers manually selected for curation
+            Created >= 11/01/2019
+      36926 Papers manually NOT selected for curation
+            Created >= 11/01/2019
+
+    Selected papers created_by counts:
+        cut -d '|' -f 6 selected.txt| sort | uniq -c
+            236 acv
+           1138 cms
+              1 created_by
+          22345 csmith
+            438 dab
+            480 dmitrys
+            627 dmk
+            511 dph
+            437 embargo_PDF_download
+           2105 hjd
+            162 honda
+           1540 jeo
+           1439 jfinger
+              1 jrecla
+            506 jx
+            803 krc
+              3 littriage_discard
+            225 littriage_goa
+            268 littriage_noctua
+           1101 ln
+            403 mmh
+            549 mnk
+            485 monikat
+           1713 neb
+           7169 pdfdownload
+            444 smb
+            443 terryh
+           1171 wilmil
+    Rejected papers created_by counts:
+        cut -d '|' -f 6 rejected.txt| sort | uniq -c
+             15 acv
+            617 cms
+              1 created_by
+           9004 csmith
+            688 dab
+            224 dmitrys
+           1353 dmk
+           1251 dph
+            212 embargo_PDF_download
+           3084 hjd
+            427 honda
+           1281 jeo
+           1514 jfinger
+            980 jx
+           1008 krc
+             14 littriage_discard
+              2 littriage_noctua
+           1708 ln
+            163 mmh
+            132 mnk
+            630 monikat
+           2224 neb
+           8761 pdfdownload
+            304 smb
+            317 terryh
+           1013 wilmil
+
+OK for refs created since 11/01/2019
+    selected.txt
+        46,741 references
+        3,542,773,972 bytes = 3.5 G
+        75795 bytes/reference
+    rejected.txt
+        36,962 references
+        2,455,201,839 bytes = 2.5 G
+        66425 bytes/reference
+
+    SO ESTIMATE: 70,000 bytes per reference
+
+Another Goal: analyze counts of selected/rejected (or discard) by curation
+group to see how many neg/positive examples we have.
+
+https://docs.google.com/spreadsheets/d/1mKxDcDxsKmoI-vyxthlBWbh2_hMR2HrEOIHTdfWPYwE/edit?pli=1#gid=1798311987
+
+Summary:
+    From papers in db after 11/1/2019 (latest pdftotext in db)
+        ~37K manually discarded, in theory, these are rejected by all groups
+            - a subset have also been manually rejected by various groups
+                AP:    1,609        reject
+                GXD:   9,898        reject
+                Tumor:   586        reject
+                GO:       78        reject
+        ~47K curated keepers
+            - subsets selected by various groups:
+                AP:   43,999        selected
+                GXD:   4,298        selected
+                Tumor: 4,290        selected
+                GO:   17,218        selected
+            - subsets rejected by various groups:
+                AP:    2,339        reject
+                GXD:  12,823        reject
+                Tumor: 3,279        reject
+                GO:      417        reject
+
+        AP:   44K selected,   4K manually rejected, 35K discard
+        GXD:   4K selected,  23K manually rejected, 27K discard
+        Tumor: 4K selected,   4K manually rejected, 37K discard
+
+    From older papers selected for GXD or selected/rejected for Tumor
+    01/01/2000..10/31/2019
+    48K papers
+        AP:     35K papers selected
+        AP:     12K papers rejected
+
+        GXD:    22K papers selected
+        GXD:    20K papers rejected
+
+        Tumor:  16K papers selected
+        Tumor:  11K papers rejected
+
+    SO OVERALL TOTAL FROM ALL THREE ABOVE
+    AP:    79K selected,  16K manually rejected, 35K discard
+    GXD:   26K selected,  43K manually rejected, 27K discard
+    Tumor: 20K selected,  15K manually rejected, 37K discard
+
+FINAL RUN ON PRODUCTION:
+Tue Feb  7 10:36:17 2023
+Hitting database bhmgidb01.jax.org prod as mgd_public
+  20725 Omitted refs
+        GOA loaded or only pm2gene indexed or MGI:Mice_in_references_only.
+        Extracted text null or <500 chars.
+        Created >= 01/01/2000
+  48616 Peer Reviewed Papers manually selected for curation
+        Created >= 11/01/2019
+  37028 Peer Reviewed Papers manually discarded
+        Created >= 11/01/2019
+  47636 Older Peer Reviewed Papers manually selected for GXD
+        or manually selected/rejected for Tumor
+        Created >= 01/01/2000 and < 11/01/2019
+
+One paper in 'selected' has been duplicated. I removed that manually.
+    This is MGI:6511357, refs_key 421991.
+    Has two rows in bib_status_view for some reason.
+One selected paper was added to the db between getting the counts and getting
+    the selected references
+    
+For 'older' papers, wrote a script to re-extract the text from PDFs.
+    171 papers had pdftotext errors (170 permission probs, 1 just took forever
+    and I killed it.
+    I removed these 171 papers from older.txt
+
+The counts above and the *.tbl.txt files are a little off because
+    - the above manual alterations
+    - some papers were added/curated during the time that the scripts were
+        running.
+    - NEED TO GET FINAL COUNTS FROM THE ALTERED SAMPLE FILES THEMSELVES
+
+One other paper has some oddities - maybe a bug in SampleSet.read() or write():
+    MGI:6115597 in older.txt has ctrl-M's in the abstract text.
+    When sdGetExtText.py read older.txt in and wrote it back out, the ctrl-M's
+        got replaced by '\n'. (I was diffing the files to get a sense of the
+        changes, and things were all messed up because of the additional '\n's)
+    Also should look at SampleSet.read().
+        Perhaps it should handle an optional '\n' at the end of the file.

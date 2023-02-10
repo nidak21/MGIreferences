@@ -14,8 +14,8 @@ import re
 from copy import copy
 from baseSampleDataLib import *
 import utilsLib
-import figureText
-import featureTransform
+#import figureText
+#import featureTransform
 #-----------------------------------
 #
 # Naming conventions:
@@ -32,10 +32,10 @@ RECORDEND    = ';;'     # record ending str when reading/writing sample files
 
 #-----------------------------------
 # Regex's sample preprocessors
-urls_re      = re.compile(r'\b(?:https?://|www[.]|doi)\S*',re.IGNORECASE)
-token_re     = re.compile(r'\b([a-z_]\w+)\b',re.IGNORECASE)
+#urls_re      = re.compile(r'\b(?:https?://|www[.]|doi)\S*',re.IGNORECASE)
+#token_re     = re.compile(r'\b([a-z_]\w+)\b',re.IGNORECASE)
 
-stemmer = None		# see preprocessor below
+#stemmer = None		# see preprocessor below
 #-----------------------------------
 
 class MGIReference (BaseSample):
@@ -49,16 +49,18 @@ class MGIReference (BaseSample):
     """
     # fields of a sample as an input/output record (as text), in order
     fieldNames = [ \
+            '_refs_key'     , # MGI db reference key
             'ID'            , # MGI ID
             'PMID'          ,
-            'DOI'           ,
-            '_refs_key'     , # MGI db reference key
+            'DOID'          ,
             'creationDate'  , # MGI db creation date
-            'date'          , # pub date
-            'year'          , # pub year
+            'createdBy'     , 
+            'pubDate'       , # pub date
+            'pubYear'       , # pub year
             'refType'       ,
-            'discardKeep'   ,
             'isReview'      ,
+            'relevance'     ,
+            'relevanceBy'   ,
             'suppStatus'    ,
             'apStatus'      ,
             'gxdStatus'     ,
@@ -66,7 +68,6 @@ class MGIReference (BaseSample):
             'tumorStatus'   ,
             'qtlStatus'     ,
             'proStatus'     ,
-            'miceOnlyInRefs',
             'journal'       ,
             'title'         ,
             'abstract'      ,
@@ -94,66 +95,12 @@ class MGIReference (BaseSample):
     #  Each preprocessor should modify this sample and return itself
     #----------------------
 
-    def figureTextLegends(self):	# preprocessor
-        # just figure legends
-        self.setExtractedText('\n\n'.join( \
-                figConverterLegends.text2FigText(self.getExtractedText())))
-        return self
-    # ---------------------------
-
-    def figureTextLegParagraphs(self):	# preprocessor
-        # figure legends + paragraphs discussing figures
-        self.setExtractedText('\n\n'.join( \
-            figConverterLegParagraphs.text2FigText(self.getExtractedText())))
-        return self
-    # ---------------------------
-
-    def figureTextLegCloseWords50(self):	# preprocessor
-        # figure legends + 50 words around "figure" references in paragraphs
-        self.setExtractedText('\n\n'.join( \
-            figConverterLegCloseWords50.text2FigText(self.getExtractedText())))
-        return self
-    # ---------------------------
-
-    def featureTransform(self):		# preprocessor
-        self.setTitle( featureTransform.transformText(self.getTitle()) )
-        self.setAbstract( featureTransform.transformText(self.getAbstract()) )
-        self.setExtractedText( featureTransform.transformText( \
-                                                self.getExtractedText()) )
-        return self
-    # ---------------------------
-
-    def removeURLsCleanStem(self):	# preprocessor
+    def rejectIfNoText(self):		# preprocessor
         '''
-        Remove URLs and punct, lower case everything,
-        Convert '-/-' to 'mut_mut',
-        Keep tokens that start w/ letter or _ and are 2 or more chars.
-        Stem,
-        Replace \n with spaces
+        set to reject if extracted text is missing or very short
         '''
-        # This is currently the only preprocessor that uses a stemmer.
-        # Would be clearer to import and instantiate one stemmer above,
-        # BUT that requires nltk (via anaconda) to be installed on each
-        # server we use. This is currently not installed on our linux servers
-        # By importing here, we can use RefSample in situations where we don't
-        # call this preprocessor, and it will work on our current server setup.
-        global stemmer
-        if not stemmer:
-            import nltk.stem.snowball as nltk
-            stemmer = nltk.EnglishStemmer()
-        #------
-        def _removeURLsCleanStem(text):
-            output = ''
-            for s in urls_re.split(text): # split and remove URLs
-                s = featureTransform.transformText(s).lower()
-                for m in token_re.finditer(s):
-                    output += " " + stemmer.stem(m.group())
-            return  output
-        #------
-
-        self.setTitle( _removeURLsCleanStem( self.getTitle()) )
-        self.setAbstract( _removeURLsCleanStem( self.getAbstract()) )
-        self.setExtractedText( _removeURLsCleanStem( self.getExtractedText()) )
+        if len(self.getExtractedText()) < 500:
+            self.setReject(True, reason="extracted text is < 500 chars")
         return self
     # ---------------------------
 
