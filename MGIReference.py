@@ -12,8 +12,9 @@ import os.path
 import string
 import re
 from copy import copy
-from baseSampleDataLib import *
-import utilsLib
+from MLbaseSample import *
+import MLtextUtils as utilsLib
+import MLsciLitText
 #import figureText
 #import featureTransform
 #-----------------------------------
@@ -153,6 +154,14 @@ class MGIReference (BaseSample):
         if os.path.isfile(fileName):
             newText = open(fileName, 'r').read()
             self.setExtractedText(newText)
+        return self
+    # ---------------------------
+
+    def getFigText(self):		# preprocessor
+        """ Just a test for now.
+        """
+        paras = MLsciLitText.legendsAndFigWords(self.getExtractedText())
+        self.setExtractedText('\n\n'.join(paras))
         return self
     # ---------------------------
 # end class MGIReference ------------------------
